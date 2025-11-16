@@ -1,7 +1,7 @@
-CREATE OR REPLACE FUNCTION ff_consultar_fatura_cartao(
+ CREATE OR REPLACE FUNCTION ff_consultar_fatura_cartao(
   p_empresa_id   BIGINT,
   p_cartao_nome  TEXT,
-  p_referencia   DATE DEFAULT CURRENT_DATE  -- data base pra achar fatura
+  p_referencia   DATE DEFAULT CURRENT_DATE
 )
 RETURNS TABLE (
   mes_referencia DATE,
@@ -14,19 +14,52 @@ DECLARE
   v_cartao_id BIGINT;
   v_mes_ref   DATE;
 BEGIN
-  SELECT id
-    INTO v_cartao_id
-  FROM cartoes
-  WHERE empresa_id = p_empresa_id
-    AND lower(nome) = lower(p_cartao_nome)
-  LIMIT 1;
+  --------------------------------------------------------------------
+  -- 1) CASOS EM QUE O NOME DO CARTÃO NÃO FOI INFORMADO DIREITO
+  --    null, '', 'null', 'undefined'
+  --------------------------------------------------------------------
+  IF p_cartao_nome IS NULL
+      OR trim(p_cartao_nome) = ''
+      OR lower(trim(p_cartao_nome)) IN ('null','undefined')
+  THEN
+    -- Busca cartão marcado como "escolhido = TRUE"
+    SELECT id
+      INTO v_cartao_id
+    FROM cartoes
+    WHERE empresa_id = p_empresa_id
+      AND escolhido = TRUE
+    ORDER BY id
+    LIMIT 1;
 
-  IF v_cartao_id IS NULL THEN
-    RAISE EXCEPTION 'Cartão "%" não encontrado para empresa %', p_cartao_nome, p_empresa_id;
+    IF v_cartao_id IS NULL THEN
+      RAISE EXCEPTION 'Nenhum cartão marcado como escolhido para empresa %', p_empresa_id;
+    END IF;
+
+  ELSE
+    --------------------------------------------------------------------
+    -- 2) BUSCA PELO NOME INFORMADO
+    --------------------------------------------------------------------
+    SELECT id
+      INTO v_cartao_id
+    FROM cartoes
+    WHERE empresa_id = p_empresa_id
+      AND lower(nome) = lower(p_cartao_nome)
+    LIMIT 1;
+
+    IF v_cartao_id IS NULL THEN
+      RAISE EXCEPTION 'Cartão "%" não encontrado para empresa %', p_cartao_nome, p_empresa_id;
+    END IF;
+
   END IF;
 
+  --------------------------------------------------------------------
+  -- 3) DEFINE O MÊS DE REFERÊNCIA DA FATURA
+  --------------------------------------------------------------------
   v_mes_ref := date_trunc('month', p_referencia);
 
+  --------------------------------------------------------------------
+  -- 4) RETORNA FATURA
+  --------------------------------------------------------------------
   RETURN QUERY
   SELECT
     f.mes_referencia,
@@ -38,5 +71,6 @@ BEGIN
     AND f.mes_referencia = v_mes_ref
   ORDER BY f.mes_referencia DESC
   LIMIT 1;
+
 END;
 $$;
