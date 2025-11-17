@@ -1,4 +1,4 @@
- CREATE OR REPLACE FUNCTION ff_get_or_create_fatura(
+  CREATE OR REPLACE FUNCTION ff_get_or_create_fatura(
   p_empresa_id  BIGINT,
   p_cartao_nome TEXT,
   p_data_compra DATE

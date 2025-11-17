@@ -1,0 +1,61 @@
+ CREATE OR REPLACE FUNCTION ff_consultar_saldo_periodo(
+  p_empresa_id BIGINT,
+  p_data_ini   DATE,
+  p_data_fim   DATE
+)
+RETURNS TABLE (
+  conta_nome TEXT,
+  nro_banco TEXT,
+  agencia TEXT,
+  conta TEXT,
+  conjunta BOOLEAN,
+  juridica BOOLEAN,
+  saldo_inicial NUMERIC,
+  entradas_periodo NUMERIC,
+  saídas_periodo NUMERIC,
+  saldo_final NUMERIC
+)
+LANGUAGE sql
+AS $$
+
+WITH contas AS (
+  SELECT
+    id,
+    nome,
+    nro_banco,
+    agencia,
+    conta,
+    conjunta,
+    juridica,
+    saldo_inicial
+  FROM contas_financeiras
+  WHERE empresa_id = p_empresa_id
+),
+
+mov_periodo AS (
+  SELECT
+    t.conta_id,
+    SUM(CASE WHEN t.tipo = 'entrada' THEN t.valor ELSE 0 END) AS entradas,
+    SUM(CASE WHEN t.tipo = 'saida'   THEN t.valor ELSE 0 END) AS saidas
+  FROM transacoes t
+  WHERE t.empresa_id = p_empresa_id
+    AND t.data_movimento BETWEEN p_data_ini AND p_data_fim
+  GROUP BY t.conta_id
+)
+
+SELECT
+  c.nome AS conta_nome,
+  c.nro_banco,
+  c.agencia,
+  c.conta,
+  c.conjunta,
+  c.juridica,
+  c.saldo_inicial,
+  COALESCE(m.entradas,0) AS entradas_periodo,
+  COALESCE(m.saidas,0)   AS saídas_periodo,
+  (c.saldo_inicial + COALESCE(m.entradas,0) - COALESCE(m.saidas,0)) AS saldo_final
+FROM contas c
+LEFT JOIN mov_periodo m ON m.conta_id = c.id
+ORDER BY c.nome;
+
+$$;

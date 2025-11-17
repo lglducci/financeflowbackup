@@ -10,67 +10,19 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 AS $$
-DECLARE
-  v_cartao_id BIGINT;
-  v_mes_ref   DATE;
 BEGIN
-  --------------------------------------------------------------------
-  -- 1) CASOS EM QUE O NOME DO CARTÃO NÃO FOI INFORMADO DIREITO
-  --    null, '', 'null', 'undefined'
-  --------------------------------------------------------------------
-  IF p_cartao_nome IS NULL
-      OR trim(p_cartao_nome) = ''
-      OR lower(trim(p_cartao_nome)) IN ('null','undefined')
-  THEN
-    -- Busca cartão marcado como "escolhido = TRUE"
-    SELECT id
-      INTO v_cartao_id
-    FROM cartoes
-    WHERE empresa_id = p_empresa_id
-      AND escolhido = TRUE
-    ORDER BY id
-    LIMIT 1;
-
-    IF v_cartao_id IS NULL THEN
-      RAISE EXCEPTION 'Nenhum cartão marcado como escolhido para empresa %', p_empresa_id;
-    END IF;
-
-  ELSE
-    --------------------------------------------------------------------
-    -- 2) BUSCA PELO NOME INFORMADO
-    --------------------------------------------------------------------
-    SELECT id
-      INTO v_cartao_id
-    FROM cartoes
-    WHERE empresa_id = p_empresa_id
-      AND lower(nome) = lower(p_cartao_nome)
-    LIMIT 1;
-
-    IF v_cartao_id IS NULL THEN
-      RAISE EXCEPTION 'Cartão "%" não encontrado para empresa %', p_cartao_nome, p_empresa_id;
-    END IF;
-
-  END IF;
-
-  --------------------------------------------------------------------
-  -- 3) DEFINE O MÊS DE REFERÊNCIA DA FATURA
-  --------------------------------------------------------------------
-  v_mes_ref := date_trunc('month', p_referencia);
-
-  --------------------------------------------------------------------
-  -- 4) RETORNA FATURA
-  --------------------------------------------------------------------
   RETURN QUERY
   SELECT
-    f.mes_referencia,
-    f.status,
-    f.valor_total
+      f.mes_referencia,
+      f.status,
+      f.valor_total
   FROM cartoes_faturas f
-  WHERE f.cartao_id = v_cartao_id
-    AND f.empresa_id = p_empresa_id
-    AND f.mes_referencia = v_mes_ref
-  ORDER BY f.mes_referencia DESC
+  JOIN cartoes       c ON c.id = f.cartao_id
+  JOIN cartoes_transacoes t 
+       ON t.fatura_id = f.id
+  WHERE f.empresa_id = p_empresa_id
+    AND lower(c.nome) = lower(p_cartao_nome)
+    AND date_trunc('month', t.data_parcela) = date_trunc('month', p_referencia)
   LIMIT 1;
-
 END;
 $$;
