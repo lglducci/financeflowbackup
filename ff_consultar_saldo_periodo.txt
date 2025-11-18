@@ -1,4 +1,4 @@
- CREATE OR REPLACE FUNCTION ff_consultar_saldo_periodo(
+  CREATE OR REPLACE FUNCTION ff_consultar_saldo_periodo(
   p_empresa_id BIGINT,
   p_data_ini   DATE,
   p_data_fim   DATE
@@ -32,11 +32,24 @@ WITH contas AS (
   WHERE empresa_id = p_empresa_id
 ),
 
+-- ❗ Movimentações ANTES do período → saldo inicial real do período
+mov_antes AS (
+  SELECT
+    t.conta_id,
+    SUM(CASE WHEN t.tipo = 'entrada' THEN t.valor ELSE 0 END) AS entradas_antes,
+    SUM(CASE WHEN t.tipo = 'saida'   THEN t.valor ELSE 0 END) AS saídas_antes
+  FROM transacoes t
+  WHERE t.empresa_id = p_empresa_id
+    AND t.data_movimento < p_data_ini
+  GROUP BY t.conta_id
+),
+
+-- ❗ Movimentações DURANTE o período (já existia, está correta)
 mov_periodo AS (
   SELECT
     t.conta_id,
     SUM(CASE WHEN t.tipo = 'entrada' THEN t.valor ELSE 0 END) AS entradas,
-    SUM(CASE WHEN t.tipo = 'saida'   THEN t.valor ELSE 0 END) AS saidas
+    SUM(CASE WHEN t.tipo = 'saida'   THEN t.valor ELSE 0 END) AS saídas
   FROM transacoes t
   WHERE t.empresa_id = p_empresa_id
     AND t.data_movimento BETWEEN p_data_ini AND p_data_fim
@@ -50,12 +63,29 @@ SELECT
   c.conta,
   c.conjunta,
   c.juridica,
-  c.saldo_inicial,
-  COALESCE(m.entradas,0) AS entradas_periodo,
-  COALESCE(m.saidas,0)   AS saídas_periodo,
-  (c.saldo_inicial + COALESCE(m.entradas,0) - COALESCE(m.saidas,0)) AS saldo_final
+
+  -- SALDO INICIAL CORRETO DO PERÍODO
+  (
+    c.saldo_inicial
+    + COALESCE(ma.entradas_antes, 0)
+    - COALESCE(ma.saídas_antes, 0)
+  ) AS saldo_inicial,
+
+  COALESCE(mp.entradas, 0) AS entradas_periodo,
+  COALESCE(mp.saídas,   0) AS saídas_periodo,
+
+  -- SALDO FINAL CORRETO DO PERÍODO
+  (
+    c.saldo_inicial
+    + COALESCE(ma.entradas_antes, 0)
+    - COALESCE(ma.saídas_antes, 0)
+    + COALESCE(mp.entradas, 0)
+    - COALESCE(mp.saídas, 0)
+  ) AS saldo_final
+
 FROM contas c
-LEFT JOIN mov_periodo m ON m.conta_id = c.id
+LEFT JOIN mov_antes   ma ON ma.conta_id = c.id
+LEFT JOIN mov_periodo mp ON mp.conta_id = c.id
 ORDER BY c.nome;
 
 $$;
